@@ -1,1 +1,22 @@
-*.json diff
+# Ensure consistent line endings
+* text=auto
+
+# Treat these as binary files
+*.pth binary
+*.pt binary
+*.pkl binary
+*.joblib binary
+
+# Language-specific settings
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# Documentation
+*.md linguist-documentation
+instructions.md linguist-documentation
+
+# Mark shell scripts as executable
+*.sh text eol=lf

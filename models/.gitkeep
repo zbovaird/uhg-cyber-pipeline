@@ -1,0 +1,5 @@
+# This file ensures the models/ directory is tracked by git
+# Model files (.pth, .pt) are excluded by .gitignore
+# Place your trained model files here:
+# - uhg_model.pth (from Google Colab export)
+

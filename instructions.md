@@ -96,23 +96,34 @@ pip install pydantic-settings PyGithub langchain-core torch python-dotenv
 Create a `.env` file in the project root with the following variables:
 
 ```bash
-# GitHub Configuration
+# Source Repository Configuration (READ-ONLY)
+# This is where the pipeline reads the original network topology data
+SRC_GITHUB_OWNER=zbovaird
+SRC_GITHUB_REPO=Unreal-UHG
+SRC_GITHUB_JSON_PATH=Data/network_topology.json
+SRC_GITHUB_BRANCH=main
+
+# Output Repository Configuration (WRITE-ONLY)  
+# This is where the pipeline writes the scored/analyzed data for Unreal Engine
+OUT_GITHUB_OWNER=zbovaird
+OUT_GITHUB_REPO=Unreal-UHG-Output
+OUT_GITHUB_JSON_PATH=Data/network_topology_scored.json
+OUT_GITHUB_BRANCH=main
+
+# Authentication
 GITHUB_TOKEN=ghp_your_classic_token_here
-GITHUB_OWNER=zbovaird
-GITHUB_REPO=Unreal-UHG
-GITHUB_JSON_PATH=Data/network_topology.json
-GITHUB_BRANCH=main
 
 # OpenAI Configuration (for future LangChain features)
 OPENAI_API_KEY=your_openai_key_here
 
-# Optional: Model Configuration
-# MODEL_PATH=./models/uhg_model.pth
-# THREAT_SCORE_THRESHOLD_SUSPICIOUS=0.5
-# THREAT_SCORE_THRESHOLD_MALICIOUS=0.8
+# Model Configuration
+MODEL_PATH=./models/uhg_model.pth
+THREAT_SCORE_THRESHOLD_SUSPICIOUS=0.5
+THREAT_SCORE_THRESHOLD_MALICIOUS=0.8
 
 # Future: Swimlane Integration
 # SWIMLANE_API_KEY=your_swimlane_key_here
+# SWIMLANE_BASE_URL=https://your-instance.swimlane.com
 ```
 
 **Important**: Use a **Classic Personal Access Token** with `repo` scope, not a fine-grained token.
@@ -141,7 +152,118 @@ flowchart TD
 
 ---
 
-## Running the Project
+## LangGraph Dev Server Setup
+
+### Clean Relaunch & Smoke Test
+
+#### 0) Prerequisites
+
+- **Project root:** `~/Projects/uhg-cyber-pipeline`
+- **App folder:** `~/Projects/uhg-cyber-pipeline/my-app`
+- **Virtualenv:** `~/Projects/uhg-cyber-pipeline/.venv`
+
+#### 1) Environment Configuration
+
+Create/update `~/Projects/uhg-cyber-pipeline/.env`:
+
+```bash
+# OpenAI
+OPENAI_API_KEY=sk-proj_...           # from the funded project
+OPENAI_MODEL=gpt-4o-mini
+
+# (Optional) LangSmith tracing
+LANGSMITH_API_KEY=lsv2_...           # optional
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_PROJECT=uhg-demo
+
+# For libs that still read these names:
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=${LANGSMITH_API_KEY}
+LANGCHAIN_ENDPOINT=${LANGSMITH_ENDPOINT}
+```
+
+⚠️ **Tip:** Keep `.env` out of git.
+
+#### 2) Start Server (Terminal A)
+
+```bash
+# Kill anything old
+lsof -ti :2024 | xargs -r kill -9
+lsof -ti :2030 | xargs -r kill -9
+
+# Go to the app & activate venv
+cd ~/Projects/uhg-cyber-pipeline/my-app
+source ../.venv/bin/activate
+
+# Optional: clear bytecode
+find . -name '__pycache__' -type d -prune -exec rm -rf {} +
+
+# Launch the server (PYTHONUNBUFFERED prints logs immediately)
+PYTHONUNBUFFERED=1 langgraph dev
+```
+
+If you need to force the module export explicitly:
+```bash
+PYTHONUNBUFFERED=1 LANGGRAPH_APP=app:app langgraph dev --app app:app
+```
+
+#### 3) Verify API (Terminal B)
+
+```bash
+API=http://127.0.0.1:2024
+
+# Health check
+curl -s "$API/ok"; echo
+
+# Discover assistant
+ASSIST_JSON=$(curl -s "$API/assistants/search" \
+  -H "Content-Type: application/json" \
+  -d '{"query": ""}')
+echo "$ASSIST_JSON" | jq
+
+ASSIST_ID=$(echo "$ASSIST_JSON" | jq -r '.[0].assistant_id')
+GRAPH_ID=$(echo "$ASSIST_JSON" | jq -r '.[0].graph_id')
+echo "ASSIST_ID=$ASSIST_ID  GRAPH_ID=$GRAPH_ID"
+
+# (Optional) See the graph nodes
+curl -s "$API/assistants/$ASSIST_ID/graph" | jq '.nodes[].id'
+
+# Make a thread
+THREAD_ID=$(curl -s -X POST "$API/threads" -H "Content-Type: application/json" -d '{}' | jq -r '.thread_id')
+echo "THREAD_ID=$THREAD_ID"
+
+# Run a simple turn (happy path)
+RUN_ID=$(curl -s -X POST "$API/threads/$THREAD_ID/runs" \
+  -H "Content-Type: application/json" \
+  -d '{"assistant_id":"'"$ASSIST_ID"'","input":{"messages":[{"role":"user","content":"Say hi in one line."}]}}' \
+  | jq -r '.run_id')
+
+# Check status + last message
+curl -s "$API/threads/$THREAD_ID/runs/$RUN_ID" | jq '.status'
+curl -s "$API/threads/$THREAD_ID/state" | jq -r '.values.messages[-1].content'
+```
+
+You should see `status: "success"` and a one-line reply.
+
+#### 4) Quick One-Liner (copy/paste to restart fast)
+
+```bash
+lsof -ti :2024 | xargs -r kill -9; lsof -ti :2030 | xargs -r kill -9; \
+cd ~/Projects/uhg-cyber-pipeline/my-app && source ../.venv/bin/activate && \
+PYTHONUNBUFFERED=1 langgraph dev
+```
+
+#### 5) Troubleshooting
+
+- **Brown LangSmith banner:** Server env doesn't see `LANGSMITH_API_KEY`. Export it in the same terminal you start the server, or put it in `.env` and ensure your app calls `load_dotenv()`.
+
+- **429 insufficient_quota:** Make sure the key is from the funded project; check project/org budgets > $0; keep `gpt-4o-mini`.
+
+- **'NoneType' object has no attribute 'get':** You're running an old app module. Ensure your hardened node is in use (our current code normalizes input and catches errors). If needed, start with `--app app:app`.
+
+---
+
+## Running the Cybersecurity Pipeline
 
 ### Activate Virtual Environment
 ```bash
@@ -304,6 +426,173 @@ python scripts/run_once.py  # Test without commit
 ### Google Colab
 - Exports: Trained `.pth` model files
 - Target: `/models/uhg_model.pth` in this project
+
+### Output Repository Options
+
+**Current Implementation**: Separate repository approach ✅
+- **Source**: `zbovaird/Unreal-UHG/Data/network_topology.json` (read-only)
+- **Output**: `zbovaird/Unreal-UHG-Output/Data/network_topology_scored.json` (write-only)
+- **Unreal Engine URL**: `https://raw.githubusercontent.com/zbovaird/Unreal-UHG-Output/main/Data/network_topology_scored.json`
+
+### Setup Steps:
+1. **Create Output Repository**: Create a new GitHub repository named `Unreal-UHG-Output`
+2. **Configure Environment**: Use the dual-repository `.env` configuration shown above
+3. **Update Unreal Engine**: Point your Unreal Engine project to the new output URL
+4. **Run Pipeline**: The pipeline will automatically read from source and write to output repo
+
+---
+
+## Delta Tracking for Unreal Engine Integration
+
+The pipeline now provides **real-time change detection** to enable Unreal Engine to:
+- **Expand networks** containing changed nodes (collapsed by default)
+- **Focus camera** on high-priority threats
+- **Efficiently update** visualization without full reloads
+
+### Output Structure
+
+The pipeline writes to your `Unreal-UHG-Output` repository with this structure:
+
+```
+Data/
+├── network_topology_scored.json        # Full snapshot (current state)
+├── changes/
+│   ├── latest.json                     # Latest delta feed for UE polling
+│   └── history/
+│       └── 2025-01-15T14-22-10Z.json   # Immutable per-run deltas
+└── state/
+    └── index.json                      # Metadata pointers
+```
+
+### Snapshot Format (`network_topology_scored.json`)
+
+Full network topology with enhanced node data:
+
+```json
+{
+  "nodes": [
+    {
+      "id": "node_42",
+      "network_id": "net_a",
+      "label": "srv-42",
+      "threat_score": 0.83,
+      "status": "malicious",
+      "version": 7,
+      "updated_at": "2025-01-15T14:22:10Z",
+      // ... original node properties preserved
+    }
+  ],
+  "edges": [...],
+  "updated_at": "2025-01-15T14:22:10Z"
+}
+```
+
+### Delta Feed Format (`changes/latest.json`)
+
+Only changed nodes with before/after states:
+
+```json
+{
+  "run_id": "2025-01-15T14-22-10Z",
+  "snapshot_id": "164fab69b35d...",
+  "generated_at": "2025-01-15T14:22:10Z",
+  "changes": [
+    {
+      "entity": "node",
+      "id": "node_42",
+      "network_id": "net_a",
+      "prev": { 
+        "threat_score": 0.62, 
+        "status": "suspicious", 
+        "version": 6 
+      },
+      "curr": { 
+        "threat_score": 0.83, 
+        "status": "malicious", 
+        "version": 7 
+      },
+      "threshold_crossed": true,
+      "reason": "status_change",
+      "updated_at": "2025-01-15T14:22:10Z"
+    }
+  ],
+  "event_seq": 1
+}
+```
+
+### State Index (`state/index.json`)
+
+Metadata for UE polling optimization:
+
+```json
+{
+  "latest_run_id": "2025-01-15T14-22-10Z",
+  "latest_snapshot_id": "164fab69b35d...",
+  "latest_event_id": 1
+}
+```
+
+### Unreal Engine Integration
+
+#### Polling Strategy
+
+1. **Poll `changes/latest.json`** every X seconds with cache-busting:
+   ```
+   https://raw.githubusercontent.com/zbovaird/Unreal-UHG-Output/main/Data/changes/latest.json?v=<timestamp>
+   ```
+
+2. **Check `run_id`** - if different from last seen:
+   - Process `changes` array (sorted by priority)
+   - For each change: expand `network_id` and focus on `id`
+   - Store new `run_id` to avoid reprocessing
+
+3. **Fetch full snapshot** if needed:
+   ```
+   https://raw.githubusercontent.com/zbovaird/Unreal-UHG-Output/main/Data/network_topology_scored.json
+   ```
+
+#### Blueprint/C++ Logic
+
+```cpp
+// Pseudo-code for UE integration
+void PollForChanges() {
+    string latestDelta = FetchURL("Data/changes/latest.json?v=" + GetTimestamp());
+    auto deltaDoc = ParseJSON(latestDelta);
+    
+    if (deltaDoc.run_id != lastProcessedRunId) {
+        for (auto& change : deltaDoc.changes) {
+            if (change.threshold_crossed) {
+                ExpandNetwork(change.network_id);
+                FocusCamera(change.id);
+                
+                // Optional: Flash/highlight the node
+                HighlightNode(change.id, change.curr.status);
+            }
+        }
+        lastProcessedRunId = deltaDoc.run_id;
+    }
+}
+```
+
+### Change Detection Logic
+
+The pipeline detects changes by:
+
+1. **Version Tracking**: Each node has a `version` number incremented on changes
+2. **Score Thresholds**: Significant score changes (≥0.2) trigger alerts  
+3. **Status Changes**: Any status transition (benign ↔ suspicious ↔ malicious)
+4. **Priority Sorting**: Threshold crossings ranked higher than minor score changes
+
+### Environment Configuration
+
+Add these to your `.env` file:
+
+```bash
+# Delta tracking paths (already configured)
+OUT_CHANGES_LATEST=Data/changes/latest.json
+OUT_CHANGES_HISTORY_DIR=Data/changes/history  
+OUT_STATE_INDEX=Data/state/index.json
+```
 
 ### Swimlane (Future)
 - Triggers: Automated SOAR actions on threat detection

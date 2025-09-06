@@ -1,12 +1,12 @@
 from typing import Dict, Any
 from langchain_core.runnables import RunnableLambda, RunnableSequence
-from pipeline.io_github import fetch_json, commit_json
+from pipeline.io_github import fetch_source_json, commit_json
 from pipeline.model import load_model, infer_nodes
 from pipeline.update_json import merge_scores
 
 def build_chain():
     def _fetch(_):
-        data, sha = fetch_json()
+        data, sha = fetch_source_json()
         return {"data": data, "sha": sha}
 
     def _infer(state):
