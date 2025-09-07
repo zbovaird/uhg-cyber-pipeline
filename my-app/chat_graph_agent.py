@@ -1,35 +1,36 @@
-"""LangGraph message-handling graph with cybersecurity tools.
+#!/usr/bin/env python3
+"""
+Standalone Chat Graph Agent for UHG Cybersecurity Pipeline
 
-Handles messages from the LangGraph API and provides network topology analysis.
+Features:
+- Tool-based graph querying (fast, precise)
+- Direct HTTP access to GitHub raw data
+- No pipeline dependencies
+- Comprehensive threat analysis
 """
 
 from __future__ import annotations
-
 import os
 import json
 import requests
-from typing import Any, Dict, List, TypedDict, Optional
+from typing import Optional, Dict, Any, List
 from pathlib import Path
 from dotenv import load_dotenv
 
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+# Load .env from same directory as this script
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.agents import create_tool_calling_agent, AgentExecutor
-from langgraph.graph import StateGraph
-from langgraph.runtime import Runtime
 
-# Load .env from my-app directory
-load_dotenv(Path(__file__).resolve().parents[1] / ".env")
-
-# Configuration
 DEFAULT_URL = os.environ.get(
     "GRAPH_URL",
     "https://raw.githubusercontent.com/zbovaird/Unreal-UHG-Output/main/Data/network_topology_scored.json"
 )
 
-# ---- Graph Data Cache ----
+# ---- Simple in-memory cache ----
 _GRAPH: Dict[str, Any] | None = None
 
 def _ensure_graph_loaded(url: Optional[str] = None) -> Dict[str, Any]:
@@ -48,12 +49,14 @@ def _fetch(url: str) -> Dict[str, Any]:
             raise ValueError("Expected a JSON object at the root")
         return data
     except Exception as e:
+        print(f"Warning: Failed to fetch graph: {e}")
         return {"error": f"Failed to fetch graph: {str(e)}", "nodes": [], "edges": []}
 
 def _label_counts(nodes: List[Dict[str, Any]]) -> Dict[str, int]:
     """Count nodes by status/label."""
     counts: Dict[str, int] = {}
     for n in nodes:
+        # Check both 'status' and 'label' fields for compatibility
         label = n.get("status") or n.get("label", "unknown")
         counts[label] = counts.get(label, 0) + 1
     return counts
@@ -65,6 +68,7 @@ def _threat_stats(nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
     
     scores = []
     for n in nodes:
+        # Handle both 'threat_score' and 'score' fields
         score = float(n.get("threat_score") or n.get("score", 0.0))
         scores.append(score)
     
@@ -112,6 +116,7 @@ def list_nodes(status: Optional[str] = None, min_score: float = 0.0, top_n: int 
     out = []
     
     for n in nodes:
+        # Handle both 'threat_score' and 'score' fields
         score = float(n.get("threat_score") or n.get("score", 0.0))
         node_status = n.get("status") or n.get("label", "unknown")
         
@@ -147,6 +152,34 @@ def node_info(identifier: str) -> str:
             return json.dumps(n, indent=2)
     
     return json.dumps({"error": f"Node '{identifier}' not found"}, indent=2)
+
+@tool
+def list_edges(src: Optional[str] = None, dst: Optional[str] = None, status: Optional[str] = None, top_n: int = 50) -> str:
+    """
+    List edges filtered by source/destination nodes and/or status.
+    Returns top_n edges sorted by score descending.
+    """
+    g = _ensure_graph_loaded()
+    edges = g.get("edges", [])
+    out = []
+    
+    for e in edges:
+        if src and e.get("src") != src:
+            continue
+        if dst and e.get("dst") != dst:
+            continue
+        if status and (e.get("status") or e.get("label")) != status:
+            continue
+            
+        out.append({
+            "src": e.get("src"),
+            "dst": e.get("dst"),
+            "score": float(e.get("score", 0.0)),
+            "status": e.get("status") or e.get("label")
+        })
+    
+    out.sort(key=lambda x: x["score"], reverse=True)
+    return json.dumps(out[:top_n], indent=2)
 
 @tool
 def threat_summary() -> str:
@@ -199,11 +232,11 @@ def threat_summary() -> str:
     return json.dumps(summary, indent=2)
 
 # ---- Agent Setup ----
-TOOLS = [fetch_graph, list_nodes, node_info, threat_summary]
+TOOLS = [fetch_graph, list_nodes, node_info, list_edges, threat_summary]
 
-SYSTEM_PROMPT = """You are the UHG Cybersecurity Pipeline Assistant, an expert AI agent for network threat analysis.
+SYSTEM = """You are the UHG Cybersecurity Pipeline Assistant, an expert AI agent for network threat analysis.
 
-IMPORTANT: You analyze NETWORK TOPOLOGY DATA (nodes, edges, threat scores) from a cybersecurity system. When users say "fetch the graph" they mean "load the network topology data".
+IMPORTANT: You analyze NETWORK TOPOLOGY DATA (nodes, edges, threat scores) from a cybersecurity system. You do NOT create visual graphs or charts. When users say "fetch the graph" they mean "load the network topology data".
 
 Your capabilities:
 🔍 **Network Data Analysis**: Query network topology, nodes, edges with precise filtering
@@ -221,6 +254,7 @@ Available Tools (USE THESE TOOLS):
 - fetch_graph: Load current network topology data from GitHub
 - list_nodes: Filter network nodes by status/score
 - node_info: Get detailed info for specific network node
+- list_edges: Analyze network connections between nodes
 - threat_summary: Get comprehensive threat analysis of the network
 
 When a user asks to "fetch the graph" or similar, IMMEDIATELY use the fetch_graph tool to load network data.
@@ -233,91 +267,51 @@ Communication Style:
 - Always use tools to get actual data before responding
 """
 
-class Context(TypedDict):
-    """Context parameters for the agent."""
-    model: str
-
-class State(TypedDict):
-    """State for message handling."""
-    messages: List[BaseMessage]
-
-# Initialize the LLM and agent
-llm = ChatOpenAI(
-    model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-    temperature=0
-)
-
-# Create tool-calling agent
 prompt = ChatPromptTemplate.from_messages([
-    ("system", SYSTEM_PROMPT),
-    ("placeholder", "{chat_history}"),
+    ("system", SYSTEM),
     ("human", "{input}"),
     ("placeholder", "{agent_scratchpad}")
 ])
 
-agent = create_tool_calling_agent(llm, TOOLS, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=TOOLS, verbose=False)
+def make_agent() -> AgentExecutor:
+    """Create the cybersecurity chat agent."""
+    llm = ChatOpenAI(model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"), temperature=0)
+    agent = create_tool_calling_agent(llm, TOOLS, prompt)
+    return AgentExecutor(agent=agent, tools=TOOLS, verbose=False)
 
-async def call_model(state: State, runtime: Runtime[Context]) -> Dict[str, Any]:
-    """Process messages using the tool-enabled agent."""
-    try:
-        messages = state.get("messages", [])
-        
-        # If no messages, return a welcome message
-        if not messages:
-            welcome = "🛡️ UHG Cybersecurity Pipeline Assistant ready! Try 'fetch the graph' to load network data."
-            return {
-                "messages": messages + [AIMessage(content=welcome)]
-            }
-        
-        # Get the last user message
-        last_message = messages[-1]
-        user_content = ""
-        
-        # Handle different message formats
-        if isinstance(last_message, dict):
-            if last_message.get("role") == "user":
-                user_content = last_message.get("content", "")
-            elif last_message.get("type") == "human":
-                user_content = last_message.get("content", "")
-            else:
-                user_content = str(last_message.get("content", ""))
-        elif isinstance(last_message, HumanMessage):
-            user_content = last_message.content
-        elif hasattr(last_message, 'content'):
-            user_content = str(last_message.content)
-        else:
-            user_content = str(last_message)
-        
-        # If no valid content, return error
-        if not user_content.strip():
-            return {
-                "messages": messages + [AIMessage(content="Please send a message with content to analyze.")]
-            }
-        
-        # Use the agent executor to process the message with tools
-        result = await agent_executor.ainvoke({
-            "input": user_content,
-            "chat_history": messages[:-1]  # Exclude current message
-        })
-        
-        response = AIMessage(content=result["output"])
-        return {
-            "messages": messages + [response]
-        }
-        
-    except Exception as e:
-        # Return error message instead of crashing
-        error_msg = f"Error processing request: {str(e)}"
-        return {
-            "messages": state.get("messages", []) + [AIMessage(content=error_msg)]
-        }
+def main():
+    """Interactive chat session."""
+    print("🛡️ UHG Cybersecurity Pipeline - Standalone Chat Agent")
+    print("Features: Fast graph querying + Threat analysis")
+    print("\nSample queries:")
+    print("  • fetch the graph")
+    print("  • show threat summary")
+    print("  • list top malicious nodes")
+    print("  • node info 185.175.0.7")
+    print("  • edges from suspicious nodes")
+    print("\nType 'quit' to exit")
+    print("=" * 60)
+    
+    agent = make_agent()
+    
+    while True:
+        try:
+            q = input("\n💬 You: ").strip()
+            if not q: 
+                continue
+            if q.lower() in {"exit", "quit", "bye"}:
+                print("\n👋 Stay secure!")
+                break
+                
+            print("\n🤖 Assistant: ", end="")
+            resp = agent.invoke({"input": q})
+            print(resp["output"], "\n")
+            
+        except KeyboardInterrupt:
+            print("\n\n👋 Chat ended. Stay secure!")
+            break
+        except Exception as e:
+            print(f"\n❌ Error: {e}")
 
-# Define the graph
-graph = (
-    StateGraph(State, context_schema=Context)
-    .add_node("call_model", call_model)
-    .add_edge("__start__", "call_model")
-    .add_edge("call_model", "__end__")
-    .compile(name="Cybersecurity Chat Agent")
-)
+if __name__ == "__main__":
+    main()

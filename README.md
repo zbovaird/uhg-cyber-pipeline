@@ -1,28 +1,46 @@
 # UHG Cybersecurity Pipeline
 
-🛡️ **End-to-end cybersecurity pipeline** that integrates machine learning threat detection with real-time visualization.
+🛡️ **Comprehensive cybersecurity analysis platform** with dual chat interfaces for real-time network threat detection and analysis.
 
 ## Features
 
-- **🔍 Threat Detection**: ML model analyzes network nodes for security threats
-- **🔄 Automated Pipeline**: LangChain orchestrates fetch → analyze → score → commit workflow  
-- **🎮 Unreal Integration**: Delta tracking system provides real-time updates to Unreal Engine
-- **🤖 LangGraph API**: Interactive chat interface for pipeline monitoring and control
-- **🚨 SOAR Ready**: Future integration with Swimlane for automated response actions
-- **🧪 Safe Testing**: Test mode that doesn't affect production data
-- **📊 Change Tracking**: Sophisticated delta detection for efficient Unreal Engine updates
+### **🤖 Dual Chat Interfaces**
+- **Terminal Agent**: Fast, lightweight command-line interface (`python chat_graph_agent.py`)
+- **Web UI**: LangGraph Studio interface at `http://localhost:2024`
+- **Identical Capabilities**: Both interfaces provide the same cybersecurity tools
+
+### **🔍 Network Analysis Tools**
+- **`fetch_graph`**: Load live network topology from GitHub
+- **`threat_summary`**: Comprehensive security analysis with risk distribution
+- **`list_nodes`**: Filter nodes by threat status (benign/suspicious/malicious)
+- **`node_info`**: Detailed analysis of specific network nodes
+- **`list_edges`**: Network connection and traffic analysis
+
+### **🎮 Unreal Engine Integration**
+- **Live Data**: Direct access to `https://raw.githubusercontent.com/zbovaird/Unreal-UHG-Output/main/Data/network_topology_scored.json`
+- **Delta Tracking**: Real-time change detection for efficient updates
+- **Network Clustering**: `network_id` fields for UE organization
+- **Version Control**: Node-level versioning for change tracking
+
+### **🔄 Advanced Pipeline (Future)**
+- **Automated Scoring**: ML model integration for threat classification
+- **SOAR Integration**: Swimlane API for automated response actions
+- **Safe Testing**: Isolated test modes for development
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    A[Source JSON<br/>Unreal-UHG/network_topology.json] -->|fetch| B[LangChain Pipeline]
-    B --> C[Model Loader<br/>(pipeline/model.py)]
-    C --> D[Inference<br/>(generate threat scores)]
-    D --> E[Scoring + Update<br/>(pipeline/update_json.py)]
-    E -->|commit| F[Output JSON<br/>Unreal-UHG-Output/network_topology_scored.json]
-    E --> G[Swimlane API<br/>(optional trigger)]
-    F --> H[Unreal Engine<br/>Visualize nodes/edges]
+    A[GitHub Data Source<br/>Unreal-UHG-Output/network_topology_scored.json] -->|HTTP GET| B[Chat Agents]
+    B --> C[Analysis Tools<br/>fetch_graph, threat_summary, list_nodes]
+    C --> D[OpenAI GPT-4o-mini<br/>Intelligent Analysis]
+    D --> E[Security Insights<br/>Risk Assessment & Recommendations]
+    
+    F[Terminal Agent<br/>chat_graph_agent.py] --> B
+    G[Web UI<br/>LangGraph Studio :2024] --> B
+    
+    A --> H[Unreal Engine<br/>Real-time Visualization]
+    E --> I[Future: Swimlane SOAR<br/>Automated Response]
 ```
 
 ## Quick Start
@@ -41,18 +59,35 @@ pip install -r requirements.txt
 # See instructions.md for complete .env template
 ```
 
-### 3. Run Pipeline
+### 3. Choose Your Interface
+
+#### **Option A: Terminal Chat Agent (Fast)**
 ```bash
-python scripts/run_once.py           # dry run
-python scripts/run_once.py --commit  # commit results
-python scripts/run_safe.py --commit  # safe test mode
+cd my-app
+python chat_graph_agent.py
+# Interactive terminal interface
 ```
 
-### 4. Start LangGraph Server (Optional)
+#### **Option B: Web UI (Full Features)**
 ```bash
-cd my-app && source ../.venv/bin/activate
-PYTHONUNBUFFERED=1 langgraph dev
-# Server runs on http://localhost:2024
+cd my-app
+langgraph dev
+# Opens web interface at http://localhost:2024
+```
+
+### 4. Sample Queries (Both Interfaces)
+```
+• "fetch the graph" → Load and analyze network data
+• "show threat summary" → Comprehensive security overview  
+• "list malicious nodes" → High-risk node identification
+• "node info node_99" → Detailed node analysis
+• "list suspicious nodes with score > 0.7" → Filtered analysis
+```
+
+### 5. Advanced Pipeline (Optional)
+```bash
+python scripts/run_once.py           # dry run
+python scripts/run_once.py --commit  # commit results with delta tracking
 ```
 
 ## Repository Links

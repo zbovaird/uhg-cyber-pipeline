@@ -1,12 +1,21 @@
-# Core dependencies
-pydantic-settings==2.10.1
-PyGithub==2.7.0
-langchain-core==0.3.75
+# Core Chat Agent Dependencies
+langchain-openai>=0.2.0
+langchain-core>=0.3.75
+langchain>=0.3.0
+langgraph>=0.2.0
+python-dotenv>=1.1.1
+requests>=2.31.0
+
+# Pipeline Dependencies (for advanced features)
+pydantic-settings>=2.10.1
+PyGithub>=2.7.0
 torch>=2.0.0
-python-dotenv==1.1.1
+
+# Development and Testing
+langgraph-api>=0.4.9
 
 # Optional dependencies for future features
-# fastapi>=0.100.0  # For webhook server (Phase 4)
-# apscheduler>=3.10.0  # For scheduling (Phase 4)
-# requests>=2.31.0  # For Swimlane API (Phase 5)
+# fastapi>=0.100.0  # For webhook server
+# apscheduler>=3.10.0  # For scheduling
+# swimlane-python  # For SOAR integration
 

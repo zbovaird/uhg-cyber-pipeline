@@ -33,20 +33,42 @@ uhg-cyber-pipeline/
 ---
 
 ## Current State (✅ completed)
-1. Python project environment created (`.venv` with dependencies installed).
-2. `.env` file configured with:
-   - `OPENAI_API_KEY`
-   - `GITHUB_TOKEN` (classic PAT, repo: `Unreal-UHG`, **Contents: Read & Write**).
-3. Pipeline scaffolding built:
-   - `pipeline/io_github.py` → Pull/push JSON via GitHub API.
-   - `pipeline/model.py` → Stub inference (deterministic placeholder).
-   - `pipeline/scoring.py` → Map scores → benign/suspicious/malicious.
-   - `pipeline/update_json.py` → Merge results back into JSON.
-   - `pipeline/chains.py` → LangChain glue (RunnableSequence).
-   - `scripts/run_once.py` → CLI runner (dry-run or commit).
-4. Successfully tested:
-   - `python scripts/run_once.py` → Dry run fetch/infer/merge.
-   - `python scripts/run_once.py --commit` → Writes updated JSON to repo.
+
+### **🤖 Dual Chat Agent System**
+1. **Standalone Terminal Agent** (`my-app/chat_graph_agent.py`):
+   - Fast, lightweight command-line interface
+   - Direct tool execution with OpenAI GPT-4o-mini
+   - Real-time network analysis capabilities
+
+2. **LangGraph Web Server** (`my-app/src/agent/graph.py`):
+   - Web UI at `http://localhost:2024`
+   - LangGraph Studio integration
+   - Identical tools and capabilities as terminal agent
+
+### **🔍 Cybersecurity Analysis Tools**
+- **`fetch_graph`**: Load live network topology from GitHub
+- **`threat_summary`**: Comprehensive security analysis with risk distribution
+- **`list_nodes`**: Filter nodes by threat status (benign/suspicious/malicious)
+- **`node_info`**: Detailed analysis of specific network nodes
+- **`list_edges`**: Network connection and traffic analysis
+
+### **🎮 Unreal Engine Integration**
+- **Live Data Access**: Direct HTTP access to GitHub raw JSON
+- **Delta Tracking System**: Real-time change detection
+- **Network Clustering**: `network_id` fields for UE organization
+- **Version Control**: Node-level versioning for efficient updates
+
+### **🔧 Advanced Pipeline Features**
+- **Dual-Repository System**: Source (Unreal-UHG) + Output (Unreal-UHG-Output)
+- **Delta Generation**: Sophisticated change detection (`pipeline/diff.py`)
+- **GitHub Integration**: Enhanced I/O with dual-repo support (`pipeline/io_github.py`)
+- **Version Tracking**: Node-level change detection (`pipeline/update_json.py`)
+
+### **✅ Successfully Tested**
+- **Terminal Agent**: `python my-app/chat_graph_agent.py` → Interactive analysis
+- **Web Server**: `langgraph dev` → Web UI at localhost:2024
+- **Live Data**: Real-time access to network topology from GitHub
+- **Tool Integration**: All cybersecurity tools working in both interfaces
 
 ---
 
@@ -148,6 +170,49 @@ flowchart TD
     E -->|commit| A
     E --> F[Swimlane API<br/>(optional trigger)]
     A --> G[Unreal Engine<br/>Visualize nodes/edges]
+```
+
+---
+
+## Using the Chat Agents
+
+### **🚀 Quick Start - Choose Your Interface**
+
+#### **Option A: Terminal Agent (Fastest)**
+```bash
+cd my-app
+source ../.venv/bin/activate
+python chat_graph_agent.py
+```
+
+#### **Option B: Web UI (Full Features)**
+```bash
+cd my-app
+source ../.venv/bin/activate
+langgraph dev
+# Opens at http://localhost:2024
+```
+
+### **🔍 Sample Queries (Both Interfaces)**
+```
+• "fetch the graph" → Load and analyze current network data
+• "show threat summary" → Comprehensive security analysis
+• "list malicious nodes" → Show high-risk nodes (score ≥ 0.8)
+• "list suspicious nodes" → Show medium-risk nodes (0.5-0.8)
+• "node info node_99" → Detailed analysis of specific node
+• "list nodes with score > 0.9" → Custom filtering
+• "show me the top 10 highest threat nodes" → Prioritized analysis
+```
+
+### **📊 Expected Response Format**
+```
+Network Overview:
+- Total Nodes: 100
+- Total Edges: 199
+- Status Distribution: 50 benign, 30 suspicious, 20 malicious
+- Threat Scores: avg 0.519, max 0.99, min 0.1
+- High-Risk Nodes: [node_99: 0.99, node_98: 0.98, ...]
+- Security Recommendations: Focus on nodes >0.9, enhance monitoring
 ```
 
 ---
